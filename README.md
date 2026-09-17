@@ -1,6 +1,6 @@
 # CloudNode Panel
 
-CloudNode Panel 是一个基于 Xray-core 的轻量级节点管理面板。当前版本为 `v0.2.0-beta`，目标是先提供一个可安装、可登录、可创建基础节点的 MVP 面板，后续再逐步补齐多协议、订阅、证书、流量统计等能力。
+CloudNode Panel 是一个基于 Xray-core 的轻量级节点管理面板。当前版本为 `v0.2.0-beta`，目标是提供一个可以直接在 Debian/Ubuntu 服务器上一键部署的基础面板，并逐步补齐自动 TLS、BBR、订阅、流量统计、多协议等能力。
 
 > 声明：本项目仅供个人学习、研究和合法场景下的服务器管理使用。请遵守你所在地区的法律法规，严禁用于任何违法用途。
 
@@ -19,6 +19,10 @@ CloudNode Panel 是一个基于 Xray-core 的轻量级节点管理面板。当�
 - 查看 Xray 服务状态
 - 启动、停止、重启 Xray 服务
 - systemd + Gunicorn 后台运行
+- 自动检测并安装 Xray-core
+- 可选启用 BBR
+- 可选通过 Caddy 自动申请 HTTPS 证书并反代面板
+- 提供状态、诊断、备份、卸载命令
 
 ## 暂未实现
 
@@ -27,8 +31,8 @@ CloudNode Panel 是一个基于 Xray-core 的轻量级节点管理面板。当�
 - 多协议一键生成
 - 统一订阅链接和二维码
 - 二维码刷新
-- 自动 TLS / 证书申请
-- BBR / 系统优化
+- 节点协议层面的完整自动 TLS / REALITY 编排
+- 完整系统优化菜单
 - 流量统计
 - 完整节点编辑弹窗
 - 升级、备份、回滚脚本
@@ -37,26 +41,37 @@ CloudNode Panel 是一个基于 Xray-core 的轻量级节点管理面板。当�
 
 - Debian 11+ / Ubuntu 20.04+
 - root 权限
-- 已安装 Xray-core，并且系统中可以直接执行 `xray`
 - systemd 环境
 
-如果服务器还没有安装 Xray-core，请先安装 Xray，再部署 CloudNode Panel。
+安装脚本会自动安装基础依赖；如果未检测到 Xray-core，会自动安装 Xray-core。
 
 ## 一键部署
 
-在服务器复制粘贴执行：
+无域名测试部署：
 
 ```bash
-apt-get update && apt-get install -y git && rm -rf /tmp/cloudNode && git clone https://github.com/fuseiniadam986/cloudNode.git /tmp/cloudNode && sudo bash /tmp/cloudNode/install.sh
+apt-get update && apt-get install -y git && rm -rf /tmp/cloudNode && git clone https://github.com/fuseiniadam986/cloudNode.git /tmp/cloudNode && bash /tmp/cloudNode/install.sh
 ```
 
-也可以分步执行：
+有域名 HTTPS 部署：
+
+```bash
+apt-get update && apt-get install -y git && rm -rf /tmp/cloudNode && git clone https://github.com/fuseiniadam986/cloudNode.git /tmp/cloudNode && DOMAIN=panel.example.com EMAIL=admin@example.com bash /tmp/cloudNode/install.sh
+```
+
+启用 BBR：
+
+```bash
+ENABLE_BBR=1 bash /tmp/cloudNode/install.sh
+```
+
+也可以分步部署：
 
 ```bash
 apt-get update && apt-get install -y git
 git clone https://github.com/fuseiniadam986/cloudNode.git
 cd cloudNode
-sudo bash install.sh
+bash install.sh
 ```
 
 安装完成后，脚本会输出：
@@ -64,6 +79,8 @@ sudo bash install.sh
 - 面板地址：`http://127.0.0.1:8088`
 - 用户名：`admin`
 - 随机初始密码
+
+完整部署说明见：[docs/DEPLOY.md](docs/DEPLOY.md)。
 
 ## 访问面板
 
@@ -80,6 +97,12 @@ http://127.0.0.1:8088
 ```
 
 如果你要通过域名访问，请自行配置受保护的 HTTPS 反向代理，不建议直接把 `8088` 管理端口暴露到公网。
+
+如果安装时传入 `DOMAIN=你的域名`，脚本会使用 Caddy 自动配置 HTTPS 反代面板：
+
+```bash
+DOMAIN=panel.example.com EMAIL=admin@example.com bash install.sh
+```
 
 ## 服务管理
 
@@ -113,6 +136,15 @@ systemctl status xray
 systemctl restart xray
 ```
 
+安装器内置命令：
+
+```bash
+bash install.sh status
+bash install.sh diagnose
+bash install.sh backup
+bash install.sh uninstall
+```
+
 ## 安装位置
 
 安装脚本会使用以下路径：
@@ -124,6 +156,7 @@ systemctl restart xray
 - 节点状态文件：`/etc/cloudnode-panel/state.json`
 - systemd 服务：`/etc/systemd/system/cloudnode-panel.service`
 - Xray 配置：默认写入 `/usr/local/etc/xray/config.json`
+- Caddy 配置：`/etc/caddy/Caddyfile`，仅在传入 `DOMAIN` 时生成
 
 ## 默认账号
 
@@ -150,6 +183,7 @@ cat /etc/cloudnode-panel/env
 - 如果要公网访问，请放在 HTTPS 反向代理后面
 - 不要把 `/etc/cloudnode-panel/env`、`panel.json`、`state.json` 公开
 - 当前版本会接管默认 Xray 配置文件，部署前请先备份原配置
+- 不承诺“永不被封锁”或“速度一定更快”，实际效果取决于线路、机房、网络环境和客户端配置
 
 备份 Xray 配置：
 
@@ -162,11 +196,7 @@ cp /usr/local/etc/xray/config.json /usr/local/etc/xray/config.json.bak
 当前版本还没有正式卸载脚本。如需手动卸载：
 
 ```bash
-systemctl disable --now cloudnode-panel
-rm -f /etc/systemd/system/cloudnode-panel.service
-systemctl daemon-reload
-rm -rf /opt/cloudnode-panel
-rm -rf /etc/cloudnode-panel
+bash install.sh uninstall
 ```
 
 注意：这不会卸载 Xray-core，也不会恢复你原来的 Xray 配置。
