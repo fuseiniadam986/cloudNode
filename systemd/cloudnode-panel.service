@@ -8,9 +8,14 @@ WorkingDirectory=/opt/cloudnode-panel
 EnvironmentFile=/etc/cloudnode-panel/env
 ExecStart=/opt/cloudnode-panel/.venv/bin/gunicorn -w 1 -b 127.0.0.1:8088 app:app
 Restart=on-failure
-User=root
+User=cloudnode
+Group=cloudnode
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/etc/cloudnode-panel
+ProtectHome=true
+PrivateDevices=true
 
 [Install]
 WantedBy=multi-user.target

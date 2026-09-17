@@ -167,6 +167,8 @@ bash install.sh uninstall
 - 程序目录：`/opt/cloudnode-panel`
 - 配置目录：`/etc/cloudnode-panel`
 - 面板环境变量：`/etc/cloudnode-panel/env`
+- 特权 helper：`/usr/local/sbin/cloudnode-root-helper`
+- sudoers 白名单：`/etc/sudoers.d/cloudnode-panel`
 - 面板账号配置：`/etc/cloudnode-panel/panel.json`
 - 节点状态文件：`/etc/cloudnode-panel/state.json`
 - systemd 服务：`/etc/systemd/system/cloudnode-panel.service`
@@ -198,7 +200,8 @@ cat /etc/cloudnode-panel/env
 - 如果要公网访问，请放在 HTTPS 反向代理后面
 - 不要把 `/etc/cloudnode-panel/env`、`panel.json`、`state.json` 公开
 - 订阅地址包含可用节点凭据，请当作密码保存
-- 面板已加入 CSRF 防护和登录限速，但仍建议只通过 SSH 隧道或 HTTPS 访问
+- 面板已加入 CSRF 防护和登录限速
+- 面板服务以低权限 `cloudnode` 用户运行；写入 Xray、重启 Xray、启用 BBR 等特权动作通过 sudoers 白名单 helper 执行
 - 当前版本会接管默认 Xray 配置文件，部署前请先备份原配置
 - 不承诺“永不被封锁”或“速度一定更快”，实际效果取决于线路、机房、网络环境和客户端配置
 

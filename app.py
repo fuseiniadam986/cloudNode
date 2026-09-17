@@ -10,6 +10,7 @@ XRAY=Path(os.getenv("XRAY_CONFIG","/usr/local/etc/xray/config.json"))
 SERVICE=os.getenv("XRAY_SERVICE","xray")
 API_PORT=int(os.getenv("XRAY_API_PORT","10085"))
 VERSION="0.4.0-beta"
+HELPER=os.getenv("CLOUDNODE_HELPER","/usr/local/sbin/cloudnode-root-helper")
 app=Flask(__name__)
 app.secret_key=os.getenv("CLOUDNODE_SECRET",secrets.token_hex(32))
 app.config.update(SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Strict")
@@ -17,21 +18,23 @@ LOGIN_FAILS={}
 SAFE_PROTOCOLS={"vless-xhttp","vless-ws","vless-reality","trojan-tcp"}
 
 def csrf_token():
-    if "csrf" not in session: session["csrf"]=secrets.token_urlsafe(32)
+    if "csrf" not in session:
+        session["csrf"]=secrets.token_urlsafe(32)
     return session["csrf"]
 def require_csrf():
     if request.method in {"POST","PUT","DELETE"} and request.headers.get("X-CSRF-Token")!=session.get("csrf"):
         abort(403)
 @app.before_request
 def guard_mutations():
-    if request.endpoint not in {"login"}:
+    if request.endpoint!="login":
         require_csrf()
 
 def init():
     HOME.mkdir(parents=True,exist_ok=True)
     if not CONF.exists():
         pwd=os.getenv("CLOUDNODE_PASSWORD")
-        if not pwd: raise RuntimeError("CLOUDNODE_PASSWORD 未设置，请通过 install.sh 安装或配置环境变量")
+        if not pwd:
+            raise RuntimeError("CLOUDNODE_PASSWORD 未设置，请通过 install.sh 安装或配置环境变量")
         CONF.write_text(json.dumps({"user":"admin","password":generate_password_hash(pwd),"sub_token":secrets.token_urlsafe(24)}))
         os.chmod(CONF,0o600)
     else:
@@ -52,6 +55,9 @@ def unit_active(name):
 def bbr_status():
     p=subprocess.run(["sysctl","-n","net.ipv4.tcp_congestion_control"],capture_output=True,text=True)
     return p.stdout.strip() if p.returncode==0 else "unknown"
+def helper(*args):
+    cmd=["sudo","-n",HELPER,*args] if os.geteuid()!=0 else [HELPER,*args]
+    return subprocess.run(cmd,capture_output=True,text=True)
 def x25519():
     p=subprocess.run(["xray","x25519"],capture_output=True,text=True)
     if p.returncode: raise RuntimeError((p.stderr or p.stdout).strip())
@@ -120,15 +126,13 @@ def build(nodes):
 
 def apply_config():
     cfg=build(rd(STATE)["nodes"])
-    XRAY.parent.mkdir(parents=True,exist_ok=True)
-    tmp=XRAY.with_suffix(".cloudnode.tmp")
+    gen=HOME/"generated"; gen.mkdir(parents=True,exist_ok=True)
+    tmp=gen/"xray.json"
     tmp.write_text(json.dumps(cfg,ensure_ascii=False,indent=2))
-    p=subprocess.run(["xray","run","-test","-config",str(tmp)],capture_output=True,text=True)
+    os.chmod(tmp,0o600)
+    p=helper("apply-xray",str(tmp))
     if p.returncode:
-        tmp.unlink(missing_ok=True); raise RuntimeError((p.stderr or p.stdout).strip())
-    tmp.replace(XRAY)
-    p=subprocess.run(["systemctl","restart",SERVICE],capture_output=True,text=True)
-    if p.returncode: raise RuntimeError((p.stderr or p.stdout).strip())
+        raise RuntimeError((p.stderr or p.stdout).strip())
 
 @app.route("/login",methods=["GET","POST"])
 def login():
@@ -137,8 +141,7 @@ def login():
         if request.form.get("csrf")!=session.get("csrf"):
             abort(403)
         ip=request.headers.get("X-Forwarded-For",request.remote_addr or "").split(",")[0].strip()
-        fails=LOGIN_FAILS.get(ip,[])
-        fails=[t for t in fails if time.time()-t<300]
+        fails=[t for t in LOGIN_FAILS.get(ip,[]) if time.time()-t<300]
         if len(fails)>=8:
             return render_template("login.html",err="尝试次数过多，请稍后再试",csrf=csrf_token()),429
         c=rd(CONF)
@@ -309,16 +312,15 @@ def traffic():
 @app.post("/api/system/optimize")
 def optimize():
     if not auth(): return jsonify(ok=False,error="unauthorized"),401
-    if os.geteuid()!=0: return jsonify(ok=False,error="需要 root 权限"),403
-    Path("/etc/sysctl.d/99-cloudnode-bbr.conf").write_text("net.core.default_qdisc=fq\nnet.ipv4.tcp_congestion_control=bbr\n")
-    subprocess.run(["sysctl","--system"],capture_output=True,text=True)
+    p=helper("optimize-bbr")
+    if p.returncode: return jsonify(ok=False,error=(p.stderr or p.stdout).strip()),500
     return jsonify(ok=True,bbr=bbr_status())
 
 @app.post("/api/service/<action>")
 def service(action):
     if not auth(): return jsonify(ok=False,error="unauthorized"),401
     if action not in {"start","stop","restart"}: return jsonify(ok=False,error="invalid action"),400
-    p=subprocess.run(["systemctl",action,SERVICE],capture_output=True,text=True)
+    p=helper("service-xray",action)
     return jsonify(ok=p.returncode==0,error=(p.stderr or p.stdout).strip() if p.returncode else None)
 
 if __name__=="__main__":
