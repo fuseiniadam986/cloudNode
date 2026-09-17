@@ -10,12 +10,12 @@ ExecStart=/opt/cloudnode-panel/.venv/bin/gunicorn -w 1 -b 127.0.0.1:8088 app:app
 Restart=on-failure
 User=cloudnode
 Group=cloudnode
-NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=strict
-ReadWritePaths=/etc/cloudnode-panel
+ProtectSystem=full
+ReadWritePaths=/etc/cloudnode-panel /usr/local/etc/xray /etc/sysctl.d
 ProtectHome=true
 PrivateDevices=true
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

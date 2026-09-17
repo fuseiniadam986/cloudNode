@@ -28,6 +28,15 @@ def require_csrf():
 def guard_mutations():
     if request.endpoint!="login":
         require_csrf()
+@app.after_request
+def security_headers(resp):
+    resp.headers.setdefault("X-Frame-Options","DENY")
+    resp.headers.setdefault("X-Content-Type-Options","nosniff")
+    resp.headers.setdefault("Referrer-Policy","no-referrer")
+    resp.headers.setdefault("Permissions-Policy","camera=(), microphone=(), geolocation=()")
+    resp.headers.setdefault("Content-Security-Policy","default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
+    resp.headers.setdefault("Cache-Control","no-store")
+    return resp
 
 def init():
     HOME.mkdir(parents=True,exist_ok=True)
