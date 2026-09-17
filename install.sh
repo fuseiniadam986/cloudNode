@@ -83,8 +83,13 @@ install_panel() {
     pass="$(python3 -c 'import secrets;print(secrets.token_urlsafe(18))')"
     secret="$(python3 -c 'import secrets;print(secrets.token_hex(32))')"
   fi
-  printf 'CLOUDNODE_PASSWORD=%s\nCLOUDNODE_SECRET=%s\nXRAY_CONFIG=%s\nXRAY_SERVICE=%s\nXRAY_API_PORT=%s\n' \
-    "$pass" "$secret" "$XRAY_CONFIG" "$XRAY_SERVICE" "10085" >"$ETC_DIR/env"
+  {
+    printf 'CLOUDNODE_PASSWORD=%q\n' "$pass"
+    printf 'CLOUDNODE_SECRET=%q\n' "$secret"
+    printf 'XRAY_CONFIG=%q\n' "$XRAY_CONFIG"
+    printf 'XRAY_SERVICE=%q\n' "$XRAY_SERVICE"
+    printf 'XRAY_API_PORT=%q\n' "10085"
+  } >"$ETC_DIR/env"
   chmod 600 "$ETC_DIR/env"
 
   cp systemd/cloudnode-panel.service "$SERVICE_FILE"
@@ -148,14 +153,21 @@ update_self() {
   apt-get update
   apt-get install -y git
   git clone "$REPO_URL" "$tmp"
+  [[ -f "$tmp/install.sh" && -f "$tmp/app.py" ]] || die "更新包不完整"
   bash "$tmp/install.sh"
 }
 
 rollback() {
   local file="${1:-}"
   [[ -n "$file" && -f "$file" ]] || die "用法: bash install.sh rollback /root/cloudnode-backup-xxxx.tar.gz"
+  local real
+  real="$(realpath "$file")"
+  [[ "$real" == /root/cloudnode-backup-*.tar.gz || "$real" == "$ETC_DIR"/backup-*.tar.gz ]] || die "只允许回滚 CloudNode 生成的备份文件"
+  if tar -tzf "$real" | grep -Ev '^(etc/cloudnode-panel/|opt/cloudnode-panel/|etc/systemd/system/cloudnode-panel\.service$)' >/dev/null; then
+    die "备份内容包含非 CloudNode 路径，拒绝回滚"
+  fi
   systemctl stop cloudnode-panel 2>/dev/null || true
-  tar -xzf "$file" -C /
+  tar -xzf "$real" -C /
   systemctl daemon-reload
   systemctl enable --now cloudnode-panel
   log "已从备份恢复: $file"

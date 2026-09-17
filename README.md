@@ -197,6 +197,8 @@ cat /etc/cloudnode-panel/env
 - 推荐通过 SSH 隧道访问面板
 - 如果要公网访问，请放在 HTTPS 反向代理后面
 - 不要把 `/etc/cloudnode-panel/env`、`panel.json`、`state.json` 公开
+- 订阅地址包含可用节点凭据，请当作密码保存
+- 面板已加入 CSRF 防护和登录限速，但仍建议只通过 SSH 隧道或 HTTPS 访问
 - 当前版本会接管默认 Xray 配置文件，部署前请先备份原配置
 - 不承诺“永不被封锁”或“速度一定更快”，实际效果取决于线路、机房、网络环境和客户端配置
 

@@ -1,7 +1,7 @@
 import os,json,secrets,time,uuid,subprocess,base64,tarfile,io,re
 from pathlib import Path
 from urllib.parse import quote
-from flask import Flask,render_template,request,jsonify,session,redirect,Response
+from flask import Flask,render_template,request,jsonify,session,redirect,Response,abort
 from werkzeug.security import generate_password_hash,check_password_hash
 
 HOME=Path(os.getenv("CLOUDNODE_HOME","/etc/cloudnode-panel"))
@@ -12,11 +12,27 @@ API_PORT=int(os.getenv("XRAY_API_PORT","10085"))
 VERSION="0.4.0-beta"
 app=Flask(__name__)
 app.secret_key=os.getenv("CLOUDNODE_SECRET",secrets.token_hex(32))
+app.config.update(SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Strict")
+LOGIN_FAILS={}
+SAFE_PROTOCOLS={"vless-xhttp","vless-ws","vless-reality","trojan-tcp"}
+
+def csrf_token():
+    if "csrf" not in session: session["csrf"]=secrets.token_urlsafe(32)
+    return session["csrf"]
+def require_csrf():
+    if request.method in {"POST","PUT","DELETE"} and request.headers.get("X-CSRF-Token")!=session.get("csrf"):
+        abort(403)
+@app.before_request
+def guard_mutations():
+    if request.endpoint not in {"login"}:
+        require_csrf()
 
 def init():
     HOME.mkdir(parents=True,exist_ok=True)
     if not CONF.exists():
-        CONF.write_text(json.dumps({"user":"admin","password":generate_password_hash(os.getenv("CLOUDNODE_PASSWORD","change-me-now")),"sub_token":secrets.token_urlsafe(24)}))
+        pwd=os.getenv("CLOUDNODE_PASSWORD")
+        if not pwd: raise RuntimeError("CLOUDNODE_PASSWORD 未设置，请通过 install.sh 安装或配置环境变量")
+        CONF.write_text(json.dumps({"user":"admin","password":generate_password_hash(pwd),"sub_token":secrets.token_urlsafe(24)}))
         os.chmod(CONF,0o600)
     else:
         c=json.loads(CONF.read_text())
@@ -55,6 +71,8 @@ def normalize_node(n):
     if n["protocol"]=="vless-reality" and not n.get("private_key"):
         n["private_key"],n["public_key"]=x25519()
     return n
+def public_node(n):
+    return {k:n.get(k) for k in ["id","name","host","port","protocol","enabled","created","sni","reality_dest"]}
 def node_link(n):
     n=normalize_node(n)
     tag=quote(n["name"])
@@ -116,11 +134,19 @@ def apply_config():
 def login():
     init(); err=""
     if request.method=="POST":
+        if request.form.get("csrf")!=session.get("csrf"):
+            abort(403)
+        ip=request.headers.get("X-Forwarded-For",request.remote_addr or "").split(",")[0].strip()
+        fails=LOGIN_FAILS.get(ip,[])
+        fails=[t for t in fails if time.time()-t<300]
+        if len(fails)>=8:
+            return render_template("login.html",err="尝试次数过多，请稍后再试",csrf=csrf_token()),429
         c=rd(CONF)
         if request.form.get("user")==c["user"] and check_password_hash(c["password"],request.form.get("password","")):
-            session["ok"]=True; return redirect("/")
+            session.clear(); session["ok"]=True; csrf_token(); LOGIN_FAILS.pop(ip,None); return redirect("/")
+        fails.append(time.time()); LOGIN_FAILS[ip]=fails
         err="用户名或密码错误"
-    return render_template("login.html",err=err)
+    return render_template("login.html",err=err,csrf=csrf_token())
 
 @app.get("/logout")
 def logout(): session.clear(); return redirect("/login")
@@ -136,7 +162,7 @@ def state():
     for n in st["nodes"]:
         before=json.dumps(n,sort_keys=True); normalize_node(n); changed=changed or before!=json.dumps(n,sort_keys=True)
     if changed: wr(STATE,st)
-    return jsonify(ok=True,running=running(),nodes=st["nodes"],version=VERSION,
+    return jsonify(ok=True,running=running(),nodes=[public_node(n) for n in st["nodes"]],version=VERSION,csrf=csrf_token(),
                    sub_url="/sub/"+c["sub_token"],bbr=bbr_status(),caddy=unit_active("caddy"))
 
 @app.post("/api/nodes")
@@ -152,7 +178,7 @@ def create():
     st=rd(STATE)
     if any(n["port"]==port for n in st["nodes"]):
         return jsonify(ok=False,error="该端口已被 CloudNode 节点使用"),409
-    if protocol not in {"vless-xhttp","vless-ws","vless-reality","trojan-tcp"}:
+    if protocol not in SAFE_PROTOCOLS:
         return jsonify(ok=False,error="协议类型不支持"),400
     n={"id":secrets.token_hex(4),"name":name[:32],"host":host[:253],"port":port,"protocol":protocol,
        "uuid":str(uuid.uuid4()),"path":"/"+secrets.token_urlsafe(9),
@@ -193,7 +219,7 @@ def update(nid):
         return jsonify(ok=False,error="请检查名称、域名/IP和端口"),400
     if any(x["id"]!=nid and x["port"]==port for x in st["nodes"]):
         return jsonify(ok=False,error="该端口已被 CloudNode 节点使用"),409
-    if protocol not in {"vless-xhttp","vless-ws","vless-reality","trojan-tcp"}:
+    if protocol not in SAFE_PROTOCOLS:
         return jsonify(ok=False,error="协议类型不支持"),400
     n.update({"name":name[:32],"host":host[:253],"port":port,"enabled":enabled,"protocol":protocol,
               "sni":str(d.get("sni",n.get("sni",host))).strip() or host,
