@@ -1,6 +1,7 @@
-import os,json,secrets,time,uuid,subprocess
+import os,json,secrets,time,uuid,subprocess,base64,tarfile,io
 from pathlib import Path
-from flask import Flask,render_template,request,jsonify,session,redirect
+from urllib.parse import quote
+from flask import Flask,render_template,request,jsonify,session,redirect,Response
 from werkzeug.security import generate_password_hash,check_password_hash
 
 HOME=Path(os.getenv("CLOUDNODE_HOME","/etc/cloudnode-panel"))
@@ -13,8 +14,12 @@ app.secret_key=os.getenv("CLOUDNODE_SECRET",secrets.token_hex(32))
 def init():
     HOME.mkdir(parents=True,exist_ok=True)
     if not CONF.exists():
-        CONF.write_text(json.dumps({"user":"admin","password":generate_password_hash(os.getenv("CLOUDNODE_PASSWORD","change-me-now"))}))
+        CONF.write_text(json.dumps({"user":"admin","password":generate_password_hash(os.getenv("CLOUDNODE_PASSWORD","change-me-now")),"sub_token":secrets.token_urlsafe(24)}))
         os.chmod(CONF,0o600)
+    else:
+        c=json.loads(CONF.read_text())
+        if "sub_token" not in c:
+            c["sub_token"]=secrets.token_urlsafe(24); wr(CONF,c)
     if not STATE.exists():
         STATE.write_text('{"nodes":[]}'); os.chmod(STATE,0o600)
 
@@ -24,6 +29,16 @@ def wr(p,o):
 def auth(): return bool(session.get("ok"))
 def running():
     return subprocess.run(["systemctl","is-active",SERVICE],capture_output=True,text=True).stdout.strip()=="active"
+def unit_active(name):
+    return subprocess.run(["systemctl","is-active",name],capture_output=True,text=True).stdout.strip()=="active"
+def bbr_status():
+    p=subprocess.run(["sysctl","-n","net.ipv4.tcp_congestion_control"],capture_output=True,text=True)
+    return p.stdout.strip() if p.returncode==0 else "unknown"
+def node_link(n):
+    params=f"encryption=none&type=xhttp&path={quote(n['path'])}&security=none"
+    return f"vless://{n['uuid']}@{n['host']}:{n['port']}?{params}#{quote(n['name'])}"
+def find_node(st,nid):
+    return next((n for n in st["nodes"] if n["id"]==nid),None)
 
 def build(nodes):
     ins=[]
@@ -68,7 +83,9 @@ def home(): return render_template("index.html") if auth() else redirect("/login
 @app.get("/api/state")
 def state():
     if not auth(): return jsonify(ok=False,error="unauthorized"),401
-    return jsonify(ok=True,running=running(),nodes=rd(STATE)["nodes"],version="0.2.0-beta")
+    c=rd(CONF)
+    return jsonify(ok=True,running=running(),nodes=rd(STATE)["nodes"],version="0.3.0-beta",
+                   sub_url="/sub/"+c["sub_token"],bbr=bbr_status(),caddy=unit_active("caddy"))
 
 @app.post("/api/nodes")
 def create():
@@ -102,6 +119,75 @@ def delete(nid):
     except Exception as e:
         wr(STATE,{"nodes":old}); return jsonify(ok=False,error=str(e)),500
     return jsonify(ok=True)
+
+@app.put("/api/nodes/<nid>")
+def update(nid):
+    if not auth(): return jsonify(ok=False,error="unauthorized"),401
+    d=request.get_json(force=True)
+    st=rd(STATE); old=json.loads(json.dumps(st)); n=find_node(st,nid)
+    if not n: return jsonify(ok=False,error="节点不存在"),404
+    name=str(d.get("name",n["name"])).strip(); host=str(d.get("host",n["host"])).strip()
+    try: port=int(d.get("port",n["port"]))
+    except ValueError: return jsonify(ok=False,error="端口格式错误"),400
+    enabled=bool(d.get("enabled",n.get("enabled",True)))
+    if not name or not host or not 1<=port<=65535:
+        return jsonify(ok=False,error="请检查名称、域名/IP和端口"),400
+    if any(x["id"]!=nid and x["port"]==port for x in st["nodes"]):
+        return jsonify(ok=False,error="该端口已被 CloudNode 节点使用"),409
+    n.update({"name":name[:32],"host":host[:253],"port":port,"enabled":enabled})
+    wr(STATE,st)
+    try: apply_config()
+    except Exception as e:
+        wr(STATE,old); return jsonify(ok=False,error=str(e)),500
+    return jsonify(ok=True,node=n)
+
+@app.get("/api/nodes/<nid>/link")
+def link(nid):
+    if not auth(): return jsonify(ok=False,error="unauthorized"),401
+    n=find_node(rd(STATE),nid)
+    if not n: return jsonify(ok=False,error="节点不存在"),404
+    return jsonify(ok=True,link=node_link(n))
+
+@app.get("/api/nodes/<nid>/qr")
+def qr(nid):
+    if not auth(): return jsonify(ok=False,error="unauthorized"),401
+    n=find_node(rd(STATE),nid)
+    if not n: return jsonify(ok=False,error="节点不存在"),404
+    try:
+        import qrcode
+        import qrcode.image.svg
+        img=qrcode.make(node_link(n),image_factory=qrcode.image.svg.SvgPathImage)
+        buf=io.BytesIO(); img.save(buf)
+        return Response(buf.getvalue(),mimetype="image/svg+xml")
+    except Exception as e:
+        return jsonify(ok=False,error="二维码生成失败: "+str(e)),500
+
+@app.get("/sub/<token>")
+def sub(token):
+    c=rd(CONF)
+    if token!=c.get("sub_token"): return Response("not found",status=404)
+    links=[node_link(n) for n in rd(STATE)["nodes"] if n.get("enabled",True)]
+    body=base64.b64encode(("\n".join(links)).encode()).decode()
+    return Response(body,mimetype="text/plain; charset=utf-8")
+
+@app.get("/api/logs")
+def logs():
+    if not auth(): return jsonify(ok=False,error="unauthorized"),401
+    unit=request.args.get("unit","cloudnode-panel")
+    if unit not in {"cloudnode-panel",SERVICE,"caddy"}: return jsonify(ok=False,error="invalid unit"),400
+    p=subprocess.run(["journalctl","-u",unit,"-n","120","--no-pager"],capture_output=True,text=True)
+    return jsonify(ok=True,unit=unit,logs=(p.stdout or p.stderr)[-12000:])
+
+@app.post("/api/backup")
+def backup():
+    if not auth(): return jsonify(ok=False,error="unauthorized"),401
+    out=HOME/f"backup-{int(time.time())}.tar.gz"
+    with tarfile.open(out,"w:gz") as t:
+        for p in [CONF,STATE]:
+            if p.exists(): t.add(p,arcname=p.name)
+        if XRAY.exists(): t.add(XRAY,arcname="xray-config.json")
+    os.chmod(out,0o600)
+    return jsonify(ok=True,path=str(out))
 
 @app.post("/api/service/<action>")
 def service(action):

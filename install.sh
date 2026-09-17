@@ -69,7 +69,7 @@ install_panel() {
 
   python3 -m venv "$APP_DIR/.venv"
   "$APP_DIR/.venv/bin/pip" install --upgrade pip >/dev/null
-  "$APP_DIR/.venv/bin/pip" install Flask gunicorn
+  "$APP_DIR/.venv/bin/pip" install Flask gunicorn qrcode
 
   install -d -m 0700 "$ETC_DIR"
   local pass secret
