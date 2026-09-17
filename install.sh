@@ -9,6 +9,7 @@ XRAY_SERVICE="${XRAY_SERVICE:-xray}"
 DOMAIN="${DOMAIN:-}"
 EMAIL="${EMAIL:-}"
 ENABLE_BBR="${ENABLE_BBR:-0}"
+REPO_URL="${REPO_URL:-https://github.com/fuseiniadam986/cloudNode.git}"
 
 cd "$(dirname "$0")"
 
@@ -73,10 +74,17 @@ install_panel() {
 
   install -d -m 0700 "$ETC_DIR"
   local pass secret
-  pass="$(python3 -c 'import secrets;print(secrets.token_urlsafe(18))')"
-  secret="$(python3 -c 'import secrets;print(secrets.token_hex(32))')"
-  printf 'CLOUDNODE_PASSWORD=%s\nCLOUDNODE_SECRET=%s\nXRAY_CONFIG=%s\nXRAY_SERVICE=%s\n' \
-    "$pass" "$secret" "$XRAY_CONFIG" "$XRAY_SERVICE" >"$ETC_DIR/env"
+  if [[ -f "$ETC_DIR/env" ]]; then
+    # shellcheck disable=SC1091
+    . "$ETC_DIR/env"
+    pass="${CLOUDNODE_PASSWORD:-$(python3 -c 'import secrets;print(secrets.token_urlsafe(18))')}"
+    secret="${CLOUDNODE_SECRET:-$(python3 -c 'import secrets;print(secrets.token_hex(32))')}"
+  else
+    pass="$(python3 -c 'import secrets;print(secrets.token_urlsafe(18))')"
+    secret="$(python3 -c 'import secrets;print(secrets.token_hex(32))')"
+  fi
+  printf 'CLOUDNODE_PASSWORD=%s\nCLOUDNODE_SECRET=%s\nXRAY_CONFIG=%s\nXRAY_SERVICE=%s\nXRAY_API_PORT=%s\n' \
+    "$pass" "$secret" "$XRAY_CONFIG" "$XRAY_SERVICE" "10085" >"$ETC_DIR/env"
   chmod 600 "$ETC_DIR/env"
 
   cp systemd/cloudnode-panel.service "$SERVICE_FILE"
@@ -134,6 +142,25 @@ backup() {
   echo "$out"
 }
 
+update_self() {
+  local tmp="/tmp/cloudNode-update"
+  rm -rf "$tmp"
+  apt-get update
+  apt-get install -y git
+  git clone "$REPO_URL" "$tmp"
+  bash "$tmp/install.sh"
+}
+
+rollback() {
+  local file="${1:-}"
+  [[ -n "$file" && -f "$file" ]] || die "用法: bash install.sh rollback /root/cloudnode-backup-xxxx.tar.gz"
+  systemctl stop cloudnode-panel 2>/dev/null || true
+  tar -xzf "$file" -C /
+  systemctl daemon-reload
+  systemctl enable --now cloudnode-panel
+  log "已从备份恢复: $file"
+}
+
 diagnose() {
   echo "== OS =="
   cat /etc/os-release || true
@@ -180,6 +207,8 @@ install_all() {
   echo "  bash install.sh status"
   echo "  bash install.sh diagnose"
   echo "  bash install.sh backup"
+  echo "  bash install.sh update"
+  echo "  bash install.sh rollback /root/cloudnode-backup-xxxx.tar.gz"
   echo "  bash install.sh uninstall"
 }
 
@@ -187,7 +216,9 @@ case "${1:-install}" in
   install) install_all ;;
   status) require_root; status ;;
   backup) require_root; backup ;;
+  update) require_root; update_self ;;
+  rollback) require_root; rollback "${2:-}" ;;
   diagnose) require_root; diagnose ;;
   uninstall) require_root; uninstall ;;
-  *) die "用法: bash install.sh [install|status|backup|diagnose|uninstall]" ;;
+  *) die "用法: bash install.sh [install|status|backup|update|rollback|diagnose|uninstall]" ;;
 esac

@@ -1,6 +1,6 @@
 # CloudNode Panel
 
-CloudNode Panel 是一个基于 Xray-core 的轻量级节点管理面板。当前版本为 `v0.3.0-beta`，目标是提供一个可以直接在 Debian/Ubuntu 服务器上一键部署的基础面板，并逐步补齐生产级协议编排、流量统计和升级维护能力。
+CloudNode Panel 是一个基于 Xray-core 的轻量级节点管理面板。当前版本为 `v0.4.0-beta`，目标是提供一个可以直接在 Debian/Ubuntu 服务器上一键部署的基础面板，覆盖节点创建、协议生成、订阅、二维码、系统优化、流量统计、备份、升级和回滚等常用运维流程。
 
 > 声明：本项目仅供个人学习、研究和合法场景下的服务器管理使用。请遵守你所在地区的法律法规，严禁用于任何违法用途。
 
@@ -13,33 +13,42 @@ CloudNode Panel 是一个基于 Xray-core 的轻量级节点管理面板。当�
 - 节点列表、搜索、刷新
 - 添加节点：节点名称、域名/IP、端口
 - 编辑节点：名称、域名/IP、端口、启用状态
+- 多协议一键生成：VLESS + XHTTP、VLESS + WebSocket、VLESS + TCP + REALITY、Trojan + TCP
 - 自动生成 UUID 和 XHTTP 路径
+- REALITY 自动生成 private key、public key、shortId
 - 写入 Xray 配置前执行 `xray run -test`
 - 创建失败自动撤销节点记录
 - 删除节点
 - 生成 VLESS + XHTTP 节点链接
 - 生成节点二维码
+- 刷新节点 UUID、路径、密码、REALITY 密钥和二维码
 - 生成统一订阅地址
+- Xray Stats API 流量统计
 - 查看面板、Xray、Caddy 日志
 - 一键创建面板/Xray 配置备份
+- 安装脚本支持升级与回滚
 - 查看 Xray 服务状态
 - 启动、停止、重启 Xray 服务
 - systemd + Gunicorn 后台运行
 - 自动检测并安装 Xray-core
-- 可选启用 BBR
+- 面板和安装脚本均可启用 BBR
 - 可选通过 Caddy 自动申请 HTTPS 证书并反代面板
 - 提供状态、诊断、备份、卸载命令
 
-## 当前限制
+## 当前说明
 
-以下内容仍属于后续生产级增强，请不要把它们当成当前已完成能力：
+以下能力已经接入后端和安装脚本，但仍建议先在测试 VPS 上实机验证：
 
-- 节点协议层面的完整自动 TLS / REALITY 编排
-- 完整系统优化菜单
-- 流量统计
-- 多协议一键生成
-- 在线升级和回滚脚本
+- 多协议节点的客户端兼容性
+- REALITY 目标站点、SNI 与客户端参数匹配
+- Xray Stats API 在不同 Xray 版本中的输出格式
+- Caddy HTTPS 证书申请依赖域名解析和 80/443 端口放行
+
+以下仍属于后续增强：
+
 - 登录限速、CSRF、审计日志等后台加固
+- 更细粒度的流量重置和图表
+- 更多协议的逐项实机适配
 
 ## 系统要求
 
@@ -146,6 +155,8 @@ systemctl restart xray
 bash install.sh status
 bash install.sh diagnose
 bash install.sh backup
+bash install.sh update
+bash install.sh rollback /root/cloudnode-backup-xxxx.tar.gz
 bash install.sh uninstall
 ```
 
@@ -207,7 +218,7 @@ bash install.sh uninstall
 
 ## 版本状态
 
-当前版本：`v0.3.0-beta`
+当前版本：`v0.4.0-beta`
 
 这是第一阶段可运行 MVP，重点是验证：
 
@@ -215,13 +226,17 @@ bash install.sh uninstall
 - 后台登录
 - 节点创建
 - 节点编辑
+- 多协议一键生成
 - 节点链接和二维码
+- 二维码刷新
 - 订阅地址
-- 日志和备份
+- 流量统计
+- 日志、备份、升级、回滚
+- 系统优化
 - Xray 配置测试
 - systemd 常驻运行
 
-后续版本会继续补齐生产级 TLS/REALITY 编排、更多协议、流量统计和升级维护能力。
+后续版本会继续补齐登录安全加固、更多协议实机适配、流量图表和更细的证书状态检测。
 
 ## License
 

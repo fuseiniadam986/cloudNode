@@ -86,11 +86,16 @@ bash install.sh uninstall
 
 - 新增、编辑、删除节点
 - 启用或停用节点
-- 复制 VLESS + XHTTP 节点链接
+- 一键生成 VLESS + XHTTP、VLESS + WebSocket、VLESS + TCP + REALITY、Trojan + TCP
+- 复制节点链接
 - 查看节点二维码
+- 刷新节点二维码和凭据
 - 复制统一订阅地址
+- 查看流量统计
+- 启用 BBR 系统优化
 - 查看面板、Xray、Caddy 日志
 - 创建配置备份
+- 使用安装脚本升级和回滚
 
 也可以直接使用 systemd：
 
@@ -106,9 +111,29 @@ journalctl -u cloudnode-panel -f
 
 - 不保证网络环境下的连通率。
 - 不承诺“不会被封锁”或“速度一定更快”。
-- 面板当前以基础节点管理和配置验证为主。
-- 自动 HTTPS 主要覆盖管理面板访问，节点协议的完整 TLS/REALITY/多协议方案需要后续版本继续完善。
+- 多协议、REALITY 和流量统计已经接入，但建议先在测试 VPS 上实机验证。
+- 自动 HTTPS 主要覆盖管理面板访问；节点自身的 TLS/REALITY 参数需要按客户端要求使用。
 - 当前订阅为 Base64 编码链接列表，请确认你的客户端支持该格式。
+
+## 升级与回滚
+
+创建备份：
+
+```bash
+bash /tmp/cloudNode/install.sh backup
+```
+
+升级到 GitHub 最新版本：
+
+```bash
+bash /tmp/cloudNode/install.sh update
+```
+
+从备份回滚：
+
+```bash
+bash /tmp/cloudNode/install.sh rollback /root/cloudnode-backup-xxxx.tar.gz
+```
 
 ## 安全建议
 
