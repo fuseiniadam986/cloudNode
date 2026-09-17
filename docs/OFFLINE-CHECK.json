@@ -1,0 +1,7 @@
+{
+  "python_syntax": "PASS",
+  "installer_executable": true,
+  "panel_local_bind": "PASS",
+  "port_field": "PASS",
+  "xray_test_before_apply": "PASS"
+}

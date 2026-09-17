@@ -1,0 +1,11 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CloudNode</title><link rel="stylesheet" href="/static/app.css"></head><body>
+<aside><div class="brand">☁ <b>CloudNode</b><small>简单 · 稳定 · 高效</small></div><nav><a>⌂ 首页</a><a class="on">▣ 节点</a><a>▤ 客户端</a><a>▧ 日志</a><a>⚙ 设置</a></nav><footer>v0.2.0-beta</footer></aside>
+<main><header><div><h1>节点管理</h1><p>创建和管理节点</p></div><div><button onclick="serviceAction('restart')">重启服务</button><a href="/logout">退出</a></div></header>
+<div class="summary"><b id="run">读取状态…</b><span id="num">0 个节点</span></div>
+<section><div class="toolbar"><button class="primary" onclick="showAdd()">＋ 添加节点</button><input id="search" placeholder="搜索节点名称或域名…" oninput="render()"><button onclick="loadState()">刷新</button></div>
+<table><thead><tr><th>ID</th><th>节点名称</th><th>状态</th><th>地址</th><th>端口</th><th>创建时间</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></section></main>
+<div id="modal" class="modal"><div class="dialog"><button class="close" onclick="hideAdd()">×</button><h2>添加节点</h2><div class="tip"><b>快速创建（推荐）</b><br>UUID、XHTTP 路径等参数自动生成。</div>
+<label>节点名称<input id="name" placeholder="例如：节点01"></label><label>域名 / IP<input id="host" placeholder="node.example.com"></label><label>端口<input id="port" type="number" value="443"></label>
+<div class="scheme"><b>配置方案</b><span>● 推荐配置</span><small>VLESS + XHTTP；Beta 默认方案</small></div>
+<div class="actions"><button onclick="hideAdd()">取消</button><button class="primary" onclick="createNode()">创建节点</button></div></div></div><div id="toasts"></div>
+<script src="/static/app.js"></script></body></html>
