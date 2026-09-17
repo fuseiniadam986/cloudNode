@@ -72,6 +72,26 @@ apt-get update && apt-get install -y git && rm -rf /tmp/cloudNode && git clone h
 apt-get update && apt-get install -y git && rm -rf /tmp/cloudNode && git clone https://github.com/fuseiniadam986/cloudNode.git /tmp/cloudNode && DOMAIN=panel.example.com EMAIL=admin@example.com bash /tmp/cloudNode/install.sh
 ```
 
+无域名但需要公网 IP 访问面板：
+
+```bash
+apt-get update && apt-get install -y git && rm -rf /tmp/cloudNode && git clone https://github.com/fuseiniadam986/cloudNode.git /tmp/cloudNode && PUBLIC_IP_PANEL=1 bash /tmp/cloudNode/install.sh
+```
+
+公网 IP 模式会使用 Caddy 监听 `80` 端口并反代到本机 `127.0.0.1:8088`，同时自动加一层 Basic Auth。访问地址为：
+
+```text
+http://你的服务器IP
+```
+
+注意：公网 IP 模式没有可信浏览器 HTTPS，只建议临时使用。长期使用请绑定域名并使用 `DOMAIN=你的域名` 部署。
+
+如果你有固定管理端 IP，可以限制只允许你的 IP 访问：
+
+```bash
+PUBLIC_IP_PANEL=1 PANEL_ALLOWED_IP=你的公网IP/32 bash /tmp/cloudNode/install.sh
+```
+
 启用 BBR：
 
 ```bash
@@ -116,6 +136,8 @@ http://127.0.0.1:8088
 ```bash
 DOMAIN=panel.example.com EMAIL=admin@example.com bash install.sh
 ```
+
+如果暂时没有域名，可以安装时传入 `PUBLIC_IP_PANEL=1`，通过 `http://服务器IP` 访问。请在云厂商安全组或系统防火墙只开放 `80`，不要开放 `8088`。更安全的做法是同时设置 `PANEL_ALLOWED_IP=你的公网IP/32`。
 
 ## 服务管理
 
@@ -196,8 +218,10 @@ cat /etc/cloudnode-panel/env
 ## 安全提示
 
 - 不要使用公网 HTTP 明文登录管理面板
+- 不要直接把 `8088` 暴露到公网
 - 推荐通过 SSH 隧道访问面板
 - 如果要公网访问，请放在 HTTPS 反向代理后面
+- 如果只能使用公网 IP，请使用 `PUBLIC_IP_PANEL=1` 的 Caddy + Basic Auth 模式，并尽快切换到域名 HTTPS
 - 不要把 `/etc/cloudnode-panel/env`、`panel.json`、`state.json` 公开
 - 订阅地址包含可用节点凭据，请当作密码保存
 - 面板已加入 CSRF 防护和登录限速

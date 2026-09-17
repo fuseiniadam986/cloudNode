@@ -10,6 +10,10 @@ XRAY_CONFIG="${XRAY_CONFIG:-/usr/local/etc/xray/config.json}"
 XRAY_SERVICE="${XRAY_SERVICE:-xray}"
 DOMAIN="${DOMAIN:-}"
 EMAIL="${EMAIL:-}"
+PUBLIC_IP_PANEL="${PUBLIC_IP_PANEL:-0}"
+PANEL_BASIC_USER="${PANEL_BASIC_USER:-cloudnode}"
+PANEL_BASIC_PASS="${PANEL_BASIC_PASS:-}"
+PANEL_ALLOWED_IP="${PANEL_ALLOWED_IP:-}"
 ENABLE_BBR="${ENABLE_BBR:-0}"
 REPO_URL="${REPO_URL:-https://github.com/fuseiniadam986/cloudNode.git}"
 
@@ -120,9 +124,9 @@ EOF
 }
 
 install_caddy_if_domain_set() {
-  [[ -n "$DOMAIN" ]] || return
+  [[ -n "$DOMAIN" || "$PUBLIC_IP_PANEL" == "1" ]] || return
 
-  log "检测到 DOMAIN=$DOMAIN，开始配置 Caddy HTTPS 反向代理"
+  log "开始配置 Caddy 面板反向代理"
   apt-get install -y debian-keyring debian-archive-keyring apt-transport-https gpg
   install -d -m 0755 /usr/share/keyrings
   rm -f /usr/share/keyrings/caddy-stable-archive-keyring.gpg
@@ -131,22 +135,58 @@ install_caddy_if_domain_set() {
   apt-get update
   apt-get install -y caddy
 
-  local email_line=""
+  local email_line="" site_block="" basic_hash=""
   [[ -n "$EMAIL" ]] && email_line="email $EMAIL"
+  if [[ -n "$DOMAIN" ]]; then
+    site_block="$DOMAIN"
+  else
+    site_block=":80"
+    if [[ -z "$PANEL_BASIC_PASS" ]]; then
+      PANEL_BASIC_PASS="$(python3 -c 'import secrets;print(secrets.token_urlsafe(18))')"
+    fi
+    basic_hash="$(caddy hash-password --plaintext "$PANEL_BASIC_PASS")"
+  fi
+
   cat >/etc/caddy/Caddyfile <<EOF
 {
     $email_line
 }
 
-$DOMAIN {
+$site_block {
     encode zstd gzip
+EOF
+
+  if [[ -z "$DOMAIN" ]]; then
+    if [[ -n "$PANEL_ALLOWED_IP" ]]; then
+      cat >>/etc/caddy/Caddyfile <<EOF
+    @blocked not remote_ip $PANEL_ALLOWED_IP
+    respond @blocked 403
+
+EOF
+    fi
+    cat >>/etc/caddy/Caddyfile <<EOF
+    basicauth {
+        $PANEL_BASIC_USER $basic_hash
+    }
+EOF
+  fi
+
+  cat >>/etc/caddy/Caddyfile <<'EOF'
     reverse_proxy 127.0.0.1:8088
 }
 EOF
 
   systemctl enable --now caddy
   systemctl reload caddy
-  echo "HTTPS 面板地址: https://$DOMAIN"
+  if [[ -n "$DOMAIN" ]]; then
+    echo "HTTPS 面板地址: https://$DOMAIN"
+  else
+    echo "公网 IP 面板地址: http://服务器IP"
+    echo "公网访问用户名: $PANEL_BASIC_USER"
+    echo "公网访问密码: $PANEL_BASIC_PASS"
+    [[ -n "$PANEL_ALLOWED_IP" ]] && echo "仅允许访问来源: $PANEL_ALLOWED_IP"
+    echo "注意: IP 模式没有可信浏览器 HTTPS，建议只临时使用；长期使用请绑定域名。"
+  fi
 }
 
 status() {

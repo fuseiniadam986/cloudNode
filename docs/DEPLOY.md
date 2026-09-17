@@ -51,6 +51,43 @@ https://panel.example.com
 - 服务器安全组/防火墙需要放行 `80` 和 `443`。
 - Caddy 这里只反代管理面板，不代表所有节点协议都已经自动 TLS 化。
 
+## 公网 IP 访问面板
+
+如果暂时没有域名，但需要用公网 IP 进入面板，可以启用 IP 模式：
+
+```bash
+apt-get update && apt-get install -y git && rm -rf /tmp/cloudNode && git clone https://github.com/fuseiniadam986/cloudNode.git /tmp/cloudNode && PUBLIC_IP_PANEL=1 bash /tmp/cloudNode/install.sh
+```
+
+安装完成后访问：
+
+```text
+http://你的服务器IP
+```
+
+安装脚本会输出一组公网访问用户名和密码，这是 Caddy Basic Auth，用于在面板登录页外面再加一层保护。
+
+也可以自定义公网访问账号：
+
+```bash
+PUBLIC_IP_PANEL=1 PANEL_BASIC_USER=admin PANEL_BASIC_PASS='换成强密码' bash /tmp/cloudNode/install.sh
+```
+
+如果你有固定管理端公网 IP，建议限制来源：
+
+```bash
+PUBLIC_IP_PANEL=1 PANEL_ALLOWED_IP=你的公网IP/32 bash /tmp/cloudNode/install.sh
+```
+
+安全组/防火墙建议：
+
+- 放行 `80/tcp`
+- 不要放行 `8088/tcp`
+- 如果不需要域名 HTTPS，可以不放行 `443/tcp`
+- 有固定管理端 IP 时，同时设置 `PANEL_ALLOWED_IP`
+
+注意：公网 IP 模式没有可信浏览器 HTTPS，账号密码会经过明文 HTTP 传输，只建议临时使用。长期使用请解析域名后改用 `DOMAIN=panel.example.com EMAIL=admin@example.com` 的 HTTPS 模式。
+
 ## 启用 BBR
 
 如果服务器内核支持 BBR，可以在安装时启用：
